@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <windows.h>
 #include "proxy_exports.h"
 #include "Logging.h"
@@ -29,22 +30,25 @@ FARPROC LoadExport(const char *name) {
 }
 #pragma endregion
 
-//Uses a thread because windows gets pissy if I do this too soon, also keeps messages from blocking the main thread so that's a plus
 DWORD WINAPI InitThread(LPVOID) {
+    // Give the runner time to finish its early startup before touching anything extra.
     Sleep(100);
-
     if (AllocConsole()) {
         SetConsoleTitleA("GMI Logger");
+        freopen("CONOUT$", "w", stdout);
+        freopen("CONOUT$", "w", stderr);
+        freopen("CONIN$", "r", stdin);
     }
 
-    Logging::WriteLogLine("ModLoader injected.");
+
+    Logging::LogInfo("ModLoader injected.");
     return 0;
 }
 
 BOOL CALLBACK StartInjectedRuntime(PINIT_ONCE, PVOID, PVOID *) {
     const HANDLE thread = CreateThread(nullptr, 0, InitThread, nullptr, 0, nullptr);
     if (thread == nullptr) {
-        Logging::WriteLogLine("Failed to start init thread.");
+        Logging::LogError("Failed to start init thread.");
         return FALSE;
     }
 

@@ -16,6 +16,7 @@ target_compile_options(GameMakerModInjector PRIVATE
 )
 
 target_link_options(GameMakerModInjector PRIVATE
+        -static
         -static-libgcc
         -static-libstdc++
 )

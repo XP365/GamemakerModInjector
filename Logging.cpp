@@ -1,9 +1,18 @@
 #include <windows.h>
-#include <string>
+
+#include <cstdlib>
 
 #include "Logging.h"
 
+
 bool Logging::BuildLogPath(char *buffer, const DWORD buffer_size) {
+    SYSTEMTIME local_time;
+    GetLocalTime(&local_time);
+
+    char file_name[64];
+    wsprintfA(file_name,"logs/GMI_%02u_%02u_%02u.log", local_time.wDay, local_time.wHour, local_time.wMinute);
+
+
     if (buffer == nullptr || buffer_size == 0) {
         return false;
     }
@@ -16,14 +25,14 @@ bool Logging::BuildLogPath(char *buffer, const DWORD buffer_size) {
     for (LONG i = static_cast<LONG>(length) - 1; i >= 0; --i) {
         if (buffer[i] == '\\' || buffer[i] == '/') {
             buffer[i + 1] = '\0';
-            return lstrcatA(buffer, "GMI.log") != nullptr;
+            return lstrcatA(buffer, file_name) != nullptr;
         }
     }
 
     buffer[0] = '.';
     buffer[1] = '\\';
     buffer[2] = '\0';
-    return lstrcatA(buffer, "GMI.log") != nullptr;
+    return lstrcatA(buffer, file_name) != nullptr;
 }
 
 void Logging::WriteLogLine(const char *message) {
@@ -49,6 +58,9 @@ void Logging::WriteLogLine(const char *message) {
         return;
     }
 
+    //Create the log dir if it doesn't exist
+    CreateDirectoryA("logs", nullptr);
+
     const HANDLE file = CreateFileA(
         log_path,
         FILE_APPEND_DATA,
@@ -67,19 +79,31 @@ void Logging::WriteLogLine(const char *message) {
 }
 
 void Logging::LogInfo(const char *message) {
-    WriteLogLine((std::string("[INFO]: ") + message).c_str());
+    char line[1024];
+    lstrcpynA(line, "[INFO]: ", static_cast<int>(sizeof(line)));
+    lstrcpynA(line + lstrlenA(line), message != nullptr ? message : "", static_cast<int>(sizeof(line) - lstrlenA(line)));
+    WriteLogLine(line);
 }
 
 void Logging::LogWarning(const char *message) {
-    WriteLogLine((std::string("[WARNING]: ") + message).c_str());
+    char line[1024];
+    lstrcpynA(line, "[WARNING]: ", static_cast<int>(sizeof(line)));
+    lstrcpynA(line + lstrlenA(line), message != nullptr ? message : "", static_cast<int>(sizeof(line) - lstrlenA(line)));
+    WriteLogLine(line);
 }
 
 void Logging::LogError(const char *message) {
-    WriteLogLine((std::string("[ERROR]: ") + message).c_str());
+    char line[1024];
+    lstrcpynA(line, "[ERROR]: ", static_cast<int>(sizeof(line)));
+    lstrcpynA(line + lstrlenA(line), message != nullptr ? message : "", static_cast<int>(sizeof(line) - lstrlenA(line)));
+    WriteLogLine(line);
 }
 
 void Logging::LogErrorAndPanic(const char *message) {
     //Log the error and quit the game
-    WriteLogLine((std::string("[CRITICAL ERROR]: ") + message).c_str());
+    char line[1024];
+    lstrcpynA(line, "[CRITICAL ERROR]: ", static_cast<int>(sizeof(line)));
+    lstrcpynA(line + lstrlenA(line), message != nullptr ? message : "", static_cast<int>(sizeof(line) - lstrlenA(line)));
+    WriteLogLine(line);
     exit(-1);
 }
