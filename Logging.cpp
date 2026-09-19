@@ -1,18 +1,12 @@
 #include <windows.h>
+#include <dbghelp.h>
 
 #include <cstdlib>
 
 #include "Logging.h"
 
-
-bool Logging::BuildLogPath(char *buffer, const DWORD buffer_size) {
-    SYSTEMTIME local_time;
-    GetLocalTime(&local_time);
-
-    char file_name[64];
-    wsprintfA(file_name,"logs/GMI_%02u_%02u_%02u.log", local_time.wDay, local_time.wHour, local_time.wMinute);
-
-
+namespace {
+bool BuildModuleDirectoryPath(char *buffer, const DWORD buffer_size) {
     if (buffer == nullptr || buffer_size == 0) {
         return false;
     }
@@ -25,14 +19,89 @@ bool Logging::BuildLogPath(char *buffer, const DWORD buffer_size) {
     for (LONG i = static_cast<LONG>(length) - 1; i >= 0; --i) {
         if (buffer[i] == '\\' || buffer[i] == '/') {
             buffer[i + 1] = '\0';
-            return lstrcatA(buffer, file_name) != nullptr;
+            return true;
         }
     }
 
-    buffer[0] = '.';
-    buffer[1] = '\\';
-    buffer[2] = '\0';
-    return lstrcatA(buffer, file_name) != nullptr;
+    return false;
+}
+
+bool BuildTimestampedPath(char *buffer, const DWORD buffer_size, const char *subdir, const char *extension) {
+    if (buffer == nullptr || buffer_size == 0 || subdir == nullptr || extension == nullptr) {
+        return false;
+    }
+
+    char module_dir[MAX_PATH];
+    if (!BuildModuleDirectoryPath(module_dir, MAX_PATH)) {
+        return false;
+    }
+
+    SYSTEMTIME local_time;
+    GetLocalTime(&local_time);
+
+    char file_name[64];
+    wsprintfA(
+        file_name,
+        "GMI_%02u_%02u_%02u_%02u%s",
+        local_time.wDay,
+        local_time.wHour,
+        local_time.wMinute,
+        local_time.wSecond,
+        extension
+    );
+
+    lstrcpynA(buffer, module_dir, static_cast<int>(buffer_size));
+    const int current_length = lstrlenA(buffer);
+    if (current_length <= 0 || current_length >= static_cast<int>(buffer_size)) {
+        return false;
+    }
+
+    lstrcpynA(buffer + current_length, subdir, static_cast<int>(buffer_size - current_length));
+    const int with_subdir_length = lstrlenA(buffer);
+    if (with_subdir_length <= 0 || with_subdir_length >= static_cast<int>(buffer_size)) {
+        return false;
+    }
+
+    lstrcpynA(buffer + with_subdir_length, "\\", static_cast<int>(buffer_size - with_subdir_length));
+    const int with_slash_length = lstrlenA(buffer);
+    if (with_slash_length <= 0 || with_slash_length >= static_cast<int>(buffer_size)) {
+        return false;
+    }
+
+    lstrcpynA(buffer + with_slash_length, file_name, static_cast<int>(buffer_size - with_slash_length));
+    return lstrlenA(buffer) > 0;
+}
+
+bool EnsureNamedSubdirectoryExists(const char *subdir) {
+    if (subdir == nullptr) {
+        return false;
+    }
+
+    char module_dir[MAX_PATH];
+    if (!BuildModuleDirectoryPath(module_dir, MAX_PATH)) {
+        return false;
+    }
+
+    const int current_length = lstrlenA(module_dir);
+    if (current_length <= 0 || current_length >= MAX_PATH) {
+        return false;
+    }
+
+    lstrcpynA(module_dir + current_length, subdir, static_cast<int>(MAX_PATH - current_length));
+    if (!CreateDirectoryA(module_dir, nullptr)) {
+        const DWORD error = GetLastError();
+        if (error != ERROR_ALREADY_EXISTS) {
+            return false;
+        }
+    }
+
+    return true;
+}
+}
+
+
+bool Logging::BuildLogPath(char *buffer, const DWORD buffer_size) {
+    return BuildTimestampedPath(buffer, buffer_size, "logs", ".log");
 }
 
 void Logging::WriteLogLine(const char *message) {
@@ -58,8 +127,9 @@ void Logging::WriteLogLine(const char *message) {
         return;
     }
 
-    //Create the log dir if it doesn't exist
-    CreateDirectoryA("logs", nullptr);
+    if (!EnsureNamedSubdirectoryExists("logs")) {
+        return;
+    }
 
     const HANDLE file = CreateFileA(
         log_path,
@@ -105,5 +175,65 @@ void Logging::LogErrorAndPanic(const char *message) {
     lstrcpynA(line, "[CRITICAL ERROR]: ", static_cast<int>(sizeof(line)));
     lstrcpynA(line + lstrlenA(line), message != nullptr ? message : "", static_cast<int>(sizeof(line) - lstrlenA(line)));
     WriteLogLine(line);
+    CreateFullMemoryDump();
     exit(-1);
+}
+
+bool Logging::CreateFullMemoryDump() {
+    if (!EnsureNamedSubdirectoryExists("dumps")) {
+        return false;
+    }
+
+    char dump_path[MAX_PATH];
+    if (!BuildTimestampedPath(dump_path, MAX_PATH, "dumps", ".dmp")) {
+        return false;
+    }
+
+    const HANDLE dump_file = CreateFileA(
+        dump_path,
+        GENERIC_WRITE,
+        0,
+        nullptr,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr
+    );
+
+    if (dump_file == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+
+    const MINIDUMP_TYPE dump_type = static_cast<MINIDUMP_TYPE>(
+        MiniDumpWithPrivateReadWriteMemory |
+        MiniDumpWithDataSegs |
+        MiniDumpWithThreadInfo |
+        MiniDumpWithHandleData |
+        MiniDumpWithIndirectlyReferencedMemory |
+        MiniDumpWithUnloadedModules |
+        MiniDumpWithFullMemoryInfo
+    );
+
+    const BOOL success = MiniDumpWriteDump(
+        GetCurrentProcess(),
+        GetCurrentProcessId(),
+        dump_file,
+        dump_type,
+        nullptr,
+        nullptr,
+        nullptr
+    );
+
+    const DWORD error = success == TRUE ? ERROR_SUCCESS : GetLastError();
+    CloseHandle(dump_file);
+
+    if (success != TRUE) {
+        DeleteFileA(dump_path);
+
+        char message[128];
+        wsprintfA(message, "MiniDumpWriteDump failed with error %lu.", error);
+        WriteLogLine(message);
+        return false;
+    }
+
+    return true;
 }

@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
+include(FetchContent)
 project(GameMakerModInjector)
+
+FetchContent_Declare(
+        MinHook
+        GIT_REPOSITORY https://github.com/tsudakageyu/minhook
+        GIT_TAG        v1.3.4
+)
+FetchContent_MakeAvailable(MinHook)
 
 add_library(GameMakerModInjector SHARED
         library.cpp
@@ -19,6 +27,11 @@ target_link_options(GameMakerModInjector PRIVATE
         -static
         -static-libgcc
         -static-libstdc++
+)
+
+target_link_libraries(GameMakerModInjector PRIVATE
+        minhook
+        dbghelp
 )
 
 #force output name
