@@ -54,65 +54,37 @@ HANDLE WINAPI DetourCreateFileW(
     HANDLE hTemplateFile
 ) {
     if (lpFileName != nullptr) {
-        std::wstring filePath(lpFileName);
+        const std::wstring filePath(lpFileName);
 
-        // Hardcoded to deltarune rn, rewrite all of this.
         if (filePath.find(L"data.win") != std::wstring::npos ||
-            filePath.find(L"DATA.WIN") != std::wstring::npos ||
-            filePath.find(L".win") != std::wstring::npos ||
-            filePath.find(L".WIN") != std::wstring::npos) {
+            filePath.find(L".win") != std::wstring::npos) {
 
-            wchar_t baseExePath[MAX_PATH];
-            if (GetModuleFileNameW(nullptr, baseExePath, MAX_PATH) != 0) {
-                std::wstring rootDir(baseExePath);
-                size_t exeSlash = rootDir.find_last_of(L"\\/");
-                if (exeSlash != std::wstring::npos) {
-                    rootDir = rootDir.substr(0, exeSlash + 1);
+            const size_t lastBackslashIndex = filePath.find_last_of(L'\\');
 
-                    std::wstring relativeSubfolder = L"";
-
-                    size_t reqLastSlash = filePath.find_last_of(L"\\/");
-                    if (reqLastSlash != std::wstring::npos) {
-                        size_t rootTokenPos = filePath.find(L"DELTARUNE");
-                        if (rootTokenPos != std::wstring::npos) {
-                            size_t subfolderStart = rootTokenPos + 9;
-                            if (subfolderStart < reqLastSlash) {
-
-                                relativeSubfolder = filePath.substr(subfolderStart, (reqLastSlash - subfolderStart) + 1);
-
-
-                                if (!relativeSubfolder.empty() && (relativeSubfolder[0] == L'\\' || relativeSubfolder[0] == L'/')) {
-                                    relativeSubfolder = relativeSubfolder.substr(1);
-                                }
-                            }
-                        }
-                    }
-
-                    std::wstring replacementPath = rootDir + relativeSubfolder + L"custom_data.win";
-
-                    std::string customNarrow(replacementPath.begin(), replacementPath.end());
-                    Logging::LogInfo(("Redirecting asset handle to target subfolder path: " + customNarrow).c_str());
-
-                    HANDLE hCustomFile = fpCreateFileW(
-                        replacementPath.c_str(),
-                        dwDesiredAccess,
-                        dwShareMode,
-                        lpSecurityAttributes,
-                        dwCreationDisposition,
-                        dwFlagsAndAttributes,
-                        hTemplateFile
-                    );
-
-                    if (hCustomFile != INVALID_HANDLE_VALUE) {
-                        return hCustomFile;
-                    }
-                }
+            std::wstring redirectedPath;
+            if (lastBackslashIndex != std::wstring::npos) {
+                redirectedPath = filePath.substr(0, lastBackslashIndex + 1) + L"custom_data.win";
+            } else {
+                redirectedPath = L"custom_data.win";
             }
+
+            const std::string logMsg(redirectedPath.begin(), redirectedPath.end());
+            Logging::LogInfo("Found data.win request, redirecting to " + logMsg + ".");
+
+            HANDLE newFile = fpCreateFileW(redirectedPath.c_str(), dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+
+            if (newFile == INVALID_HANDLE_VALUE) {
+                Logging::LogWarning("No modified data.win found, falling back to vinilla.");
+                return fpCreateFileW(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+            }
+
+            return newFile;
         }
     }
 
     return fpCreateFileW(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
 }
+
 
 bool InitializeHooks() {
     if (MH_Initialize() != MH_OK) return false;
@@ -137,12 +109,12 @@ bool InitializeHooks() {
 DWORD WINAPI InitThread(LPVOID) {
     // Keep logger on a separate thread so it doesn't cause a DllMain deadlock
     Sleep(50);
-    if (AllocConsole()) {
-        SetConsoleTitleA("GMI Logger");
-        freopen("CONOUT$", "w", stdout);
-        freopen("CONOUT$", "w", stderr);
-        freopen("CONIN$", "r", stdin);
-    }
+    // if (AllocConsole()) {
+    //     SetConsoleTitleA("GMI Logger");
+    //     freopen("CONOUT$", "w", stdout);
+    //     freopen("CONOUT$", "w", stderr);
+    //     freopen("CONIN$", "r", stdin);
+    // }
 
     Logging::LogInfo("Logger attached to active runner instance.");
     return 0;

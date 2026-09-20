@@ -1,6 +1,5 @@
 #include <windows.h>
 #include <dbghelp.h>
-
 #include <cstdlib>
 
 #include "Logging.h"
@@ -148,92 +147,28 @@ void Logging::WriteLogLine(const char *message) {
     }
 }
 
-void Logging::LogInfo(const char *message) {
-    char line[1024];
-    lstrcpynA(line, "[INFO]: ", static_cast<int>(sizeof(line)));
-    lstrcpynA(line + lstrlenA(line), message != nullptr ? message : "", static_cast<int>(sizeof(line) - lstrlenA(line)));
-    WriteLogLine(line);
+void Logging::LogInfo(const std::string& message) {
+    WriteLogLine(("[INFO]: " + message).c_str());
 }
 
-void Logging::LogWarning(const char *message) {
-    char line[1024];
-    lstrcpynA(line, "[WARNING]: ", static_cast<int>(sizeof(line)));
-    lstrcpynA(line + lstrlenA(line), message != nullptr ? message : "", static_cast<int>(sizeof(line) - lstrlenA(line)));
-    WriteLogLine(line);
+void Logging::LogWarning(const std::string& message) {
+    WriteLogLine(("[WARNING]: " + message).c_str());
 }
 
-void Logging::LogError(const char *message) {
-    char line[1024];
-    lstrcpynA(line, "[ERROR]: ", static_cast<int>(sizeof(line)));
-    lstrcpynA(line + lstrlenA(line), message != nullptr ? message : "", static_cast<int>(sizeof(line) - lstrlenA(line)));
-    WriteLogLine(line);
+void Logging::LogError(const std::string& message) {
+    WriteLogLine(("[ERROR]: " + message).c_str());
 }
 
-void Logging::LogErrorAndPanic(const char *message) {
-    //Log the error and quit the game
-    char line[1024];
-    lstrcpynA(line, "[CRITICAL ERROR]: ", static_cast<int>(sizeof(line)));
-    lstrcpynA(line + lstrlenA(line), message != nullptr ? message : "", static_cast<int>(sizeof(line) - lstrlenA(line)));
-    WriteLogLine(line);
-    CreateFullMemoryDump();
+void Logging::LogErrorAndPanic(const std::string& message) {
+    WriteLogLine(("[FATAL ERROR]: " + message).c_str());
     exit(-1);
 }
 
-bool Logging::CreateFullMemoryDump() {
-    if (!EnsureNamedSubdirectoryExists("dumps")) {
-        return false;
-    }
-
-    char dump_path[MAX_PATH];
-    if (!BuildTimestampedPath(dump_path, MAX_PATH, "dumps", ".dmp")) {
-        return false;
-    }
-
-    const HANDLE dump_file = CreateFileA(
-        dump_path,
-        GENERIC_WRITE,
-        0,
+void Logging::ShowMessage(const std::string& message) {
+    MessageBox(
         nullptr,
-        CREATE_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL,
-        nullptr
+        TEXT(message.c_str()),
+        TEXT("Info"),
+        MB_OK | MB_ICONINFORMATION
     );
-
-    if (dump_file == INVALID_HANDLE_VALUE) {
-        return false;
-    }
-
-    const MINIDUMP_TYPE dump_type = static_cast<MINIDUMP_TYPE>(
-        MiniDumpWithPrivateReadWriteMemory |
-        MiniDumpWithDataSegs |
-        MiniDumpWithThreadInfo |
-        MiniDumpWithHandleData |
-        MiniDumpWithIndirectlyReferencedMemory |
-        MiniDumpWithUnloadedModules |
-        MiniDumpWithFullMemoryInfo
-    );
-
-    const BOOL success = MiniDumpWriteDump(
-        GetCurrentProcess(),
-        GetCurrentProcessId(),
-        dump_file,
-        dump_type,
-        nullptr,
-        nullptr,
-        nullptr
-    );
-
-    const DWORD error = success == TRUE ? ERROR_SUCCESS : GetLastError();
-    CloseHandle(dump_file);
-
-    if (success != TRUE) {
-        DeleteFileA(dump_path);
-
-        char message[128];
-        wsprintfA(message, "MiniDumpWriteDump failed with error %lu.", error);
-        WriteLogLine(message);
-        return false;
-    }
-
-    return true;
 }
