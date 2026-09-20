@@ -56,11 +56,12 @@ HANDLE WINAPI DetourCreateFileW(
     if (lpFileName != nullptr) {
         std::wstring filePath(lpFileName);
 
+        // Hardcoded to deltarune rn, rewrite all of this.
         if (filePath.find(L"data.win") != std::wstring::npos ||
             filePath.find(L"DATA.WIN") != std::wstring::npos ||
             filePath.find(L".win") != std::wstring::npos ||
             filePath.find(L".WIN") != std::wstring::npos) {
-            
+
             wchar_t baseExePath[MAX_PATH];
             if (GetModuleFileNameW(nullptr, baseExePath, MAX_PATH) != 0) {
                 std::wstring rootDir(baseExePath);
@@ -70,18 +71,16 @@ HANDLE WINAPI DetourCreateFileW(
 
                     std::wstring relativeSubfolder = L"";
 
-                    // Look for the last slash to separate the folder structure from the filename
                     size_t reqLastSlash = filePath.find_last_of(L"\\/");
                     if (reqLastSlash != std::wstring::npos) {
-                        // Find where the game's root directory name ends in the request path to capture the subfolder
                         size_t rootTokenPos = filePath.find(L"DELTARUNE");
                         if (rootTokenPos != std::wstring::npos) {
-                            size_t subfolderStart = rootTokenPos + 9; // Skip past the length of "DELTARUNE"
+                            size_t subfolderStart = rootTokenPos + 9;
                             if (subfolderStart < reqLastSlash) {
-                                // Extract substring between root token and the filename slash (e.g., "\chapter1_windows\")
+
                                 relativeSubfolder = filePath.substr(subfolderStart, (reqLastSlash - subfolderStart) + 1);
 
-                                // Strip any leading slashes to clean up the string
+
                                 if (!relativeSubfolder.empty() && (relativeSubfolder[0] == L'\\' || relativeSubfolder[0] == L'/')) {
                                     relativeSubfolder = relativeSubfolder.substr(1);
                                 }
@@ -89,13 +88,11 @@ HANDLE WINAPI DetourCreateFileW(
                         }
                     }
 
-                    // 3. Assemble the absolute path targeting the subfolder: rootDir + relativeSubfolder + "custom_data.win"
                     std::wstring replacementPath = rootDir + relativeSubfolder + L"custom_data.win";
 
                     std::string customNarrow(replacementPath.begin(), replacementPath.end());
                     Logging::LogInfo(("Redirecting asset handle to target subfolder path: " + customNarrow).c_str());
 
-                    // 4. Request the targeted custom asset handle
                     HANDLE hCustomFile = fpCreateFileW(
                         replacementPath.c_str(),
                         dwDesiredAccess,
@@ -155,11 +152,10 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(module);
 
-        // Enforce SYNCHRONOUS initialization.
-        // This ensures the hook is active BEFORE DllMain exits and before the engine reads data.win
+        // We don't thread this because it can create a race condition for the hook to init before GM loads the data.win
         InitializeHooks();
 
-        // Safe background invocation for console setup
+        // Console can be threaded since it kept deadlocking for some reason, and it's not high priority.
         CreateThread(nullptr, 0, (LPTHREAD_START_ROUTINE)InitThread, nullptr, 0, nullptr);
     }
     return TRUE;
